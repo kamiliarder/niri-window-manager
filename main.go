@@ -22,11 +22,11 @@ type Window struct {
 }
 
 type Layout struct {
-	PosInScrollingLayout   [2]int      `json:"pos_in_scrolling_layout"`
-	TileSize               [2]float64  `json:"tile_size"`
-	WindowSize             [2]int      `json:"window_size"`
-	TilePosInWorkspaceView *[2]float64 `json:"tile_pos_in_workspace_view"`
-	WindowOffsetInTile     [2]float64  `json:"window_offset_in_tile"`
+	Position   [2]int     `json:"pos_in_scrolling_layout"`
+	TileSize   [2]float64 `json:"tile_size"`
+	WindowSize [2]int     `json:"window_size"`
+	// TilePosInWorkspaceView *[2]float64 `json:"tile_pos_in_workspace_view"` NOTE: this boy always returns null idk why
+	WindowOffsetInTile [2]float64 `json:"window_offset_in_tile"`
 }
 
 func main() {
@@ -42,12 +42,24 @@ func main() {
 		log.Fatalf("Error parsing JSON: %v", err)
 	}
 
-	fmt.Println("Active Windows:")
 	for _, w := range Windows {
 		status := " "
+		floating := ""
+		urgency := ""
+
 		if w.IsFocused {
 			status = "*" // Mark focused window
 		}
-		fmt.Printf("[%s] %d | %s (%s)\n", status, w.ID, w.Title, w.AppID)
+		if w.IsFloating {
+			floating = "Floating\n"
+		}
+		if w.IsUrgent {
+			urgency = "(Urgent)"
+		}
+
+		fmt.Printf(
+			"ID : %d\n%s %s | [%s] %s\n%sAt Workspace %d\nLayout :\nPosition %d\nWindow Size : %d\nTile Size : %g\n\n",
+			w.ID, w.AppID, w.Title, status, urgency, floating, w.WorkspaceID, w.Layout.Position, w.Layout.WindowSize, w.Layout.TileSize)
 	}
+
 }
