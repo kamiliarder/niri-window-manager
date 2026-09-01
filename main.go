@@ -29,20 +29,33 @@ type Layout struct {
 	WindowOffsetInTile [2]float64 `json:"window_offset_in_tile"`
 }
 
-func main() {
-	winInfo, err := exec.Command("niri", "msg", "--json", "windows").CombinedOutput()
+type NiriClient struct{}
+
+func (n *NiriClient) GetWindows() ([]Window, error) {
+	output, err := exec.Command("niri", "msg", "--json", "windows").Output()
 
 	if err != nil {
-		fmt.Printf("Error msg : %s\n", string(winInfo))
-		log.Fatalf("Execution fail, %v", err)
+		return nil, err
 	}
 
-	var Windows []Window
-	if err := json.Unmarshal(winInfo, &Windows); err != nil {
-		log.Fatalf("Error parsing JSON: %v", err)
+	var windows []Window
+	if err := json.Unmarshal(output, &windows); err != nil {
+		return nil, err
 	}
 
-	for _, w := range Windows {
+	return windows, nil
+
+}
+
+func main() {
+	niriClient := &NiriClient{}
+
+	windows, err := niriClient.GetWindows()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, w := range windows {
 		status := " "
 		floating := ""
 		urgency := ""
