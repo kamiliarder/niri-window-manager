@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os/exec"
 )
 
@@ -22,16 +21,15 @@ type Window struct {
 }
 
 type Layout struct {
-	Position   [2]int     `json:"pos_in_scrolling_layout"`
-	TileSize   [2]float64 `json:"tile_size"`
-	WindowSize [2]int     `json:"window_size"`
-	// TilePosInWorkspaceView *[2]float64 `json:"tile_pos_in_workspace_view"` NOTE: this boy always returns null idk why
+	Position           [2]int     `json:"pos_in_scrolling_layout"`
+	TileSize           [2]float64 `json:"tile_size"`
+	WindowSize         [2]int     `json:"window_size"`
 	WindowOffsetInTile [2]float64 `json:"window_offset_in_tile"`
 }
 
-type NiriClient struct{}
+type NiriWindows struct{}
 
-func (n *NiriClient) GetWindows() ([]Window, error) {
+func (n *NiriWindows) GetWindows() ([]Window, error) {
 	output, err := exec.Command("niri", "msg", "--json", "windows").Output()
 
 	if err != nil {
@@ -41,18 +39,6 @@ func (n *NiriClient) GetWindows() ([]Window, error) {
 	var windows []Window
 	if err := json.Unmarshal(output, &windows); err != nil {
 		return nil, err
-	}
-
-	return windows, nil
-
-}
-
-func main() {
-	niriClient := &NiriClient{}
-
-	windows, err := niriClient.GetWindows()
-	if err != nil {
-		log.Fatal(err)
 	}
 
 	for _, w := range windows {
@@ -71,8 +57,17 @@ func main() {
 		}
 
 		fmt.Printf(
-			"ID : %d\n%s %s | [%s] %s\n%sAt Workspace %d\nLayout :\nPosition %d\nWindow Size : %d\nTile Size : %g\n\n",
-			w.ID, w.AppID, w.Title, status, urgency, floating, w.WorkspaceID, w.Layout.Position, w.Layout.WindowSize, w.Layout.TileSize)
+			"ID : %d\n%s %s | [%s] %s\n%sAt Workspace %d\nLayout :\nPosition [Column %d, Row %d]\nWindow Size : %d\nTile Size : %g\n\n",
+			w.ID, w.AppID, w.Title, status, urgency, floating, w.WorkspaceID, w.Layout.Position[0], w.Layout.Position[1], w.Layout.WindowSize, w.Layout.TileSize)
 	}
+
+	return windows, nil
+
+}
+
+func main() {
+	niriClient := &NiriWindows{}
+
+	niriClient.GetWindows()
 
 }
