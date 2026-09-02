@@ -21,7 +21,7 @@ func routes(niri *niriConn) map[string]func() error {
 
 // startServer wires up an HTTP handler for each route and blocks serving
 // until the server errors or is shut down.
-func startServer(addr string, niri *niriConn) error {
+func startServer(addr string, niri *niriConn, state *State) error {
 	mux := http.NewServeMux()
 
 	for path, action := range routes(niri) {
@@ -38,16 +38,9 @@ func startServer(addr string, niri *niriConn) error {
 		})
 	}
 
-	// Bonus: expose the window list you already had, over HTTP too.
-	mux.HandleFunc("/windows", func(w http.ResponseWriter, r *http.Request) {
-		windowInfo := &NiriWindows{}
-		windows, err := windowInfo.GetWindows()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	mux.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(windows)
+		json.NewEncoder(w).Encode(state.Snapshot())
 	})
 
 	log.Printf("listening on %s", addr)
