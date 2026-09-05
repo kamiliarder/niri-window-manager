@@ -73,3 +73,22 @@ func (n *NiriWindows) GetWindows() ([]Window, error) {
 // 		w.ID, w.AppID, w.Title, status, urgency, floating, w.WorkspaceID,
 // 		w.Layout.Position[0], w.Layout.Position[1], w.Layout.WindowSize, w.Layout.TileSize)
 // }
+
+// WindowLayoutChange decodes one (id, layout) tuple from WindowLayoutsChanged.
+// Niri serializes Rust tuples as 2-element JSON arrays, e.g. [42, {...}],
+// so this can't be a plain struct with json tags — it needs custom decoding.
+type WindowLayoutChange struct {
+	ID     int64
+	Layout Layout
+}
+
+func (c *WindowLayoutChange) UnmarshalJSON(data []byte) error {
+	var pair [2]json.RawMessage
+	if err := json.Unmarshal(data, &pair); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(pair[0], &c.ID); err != nil {
+		return err
+	}
+	return json.Unmarshal(pair[1], &c.Layout)
+}

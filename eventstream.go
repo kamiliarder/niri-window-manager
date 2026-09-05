@@ -119,7 +119,48 @@ func handleEvent(state *State, variant string, payload json.RawMessage) {
 			log.Printf("WorkspaceActivated: %v", err)
 			return
 		}
-		state.ActivateWorkspace(body.ID, body.Focused)
+	case "WindowLayoutsChanged":
+		var body struct {
+			Changes []WindowLayoutChange `json:"changes"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			log.Printf("WindowLayoutsChanged: %v", err)
+			return
+		}
+		state.UpdateWindowLayouts(body.Changes)
+
+	case "WorkspaceActiveWindowChanged":
+		var body struct {
+			WorkspaceID    uint64  `json:"workspace_id"`
+			ActiveWindowID *uint64 `json:"active_window_id"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			log.Printf("WorkspaceActiveWindowChanged: %v", err)
+			return
+		}
+		state.SetWorkspaceActiveWindow(body.WorkspaceID, body.ActiveWindowID)
+
+	case "WindowUrgencyChanged":
+		var body struct {
+			ID     int64 `json:"id"`
+			Urgent bool  `json:"urgent"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			log.Printf("WindowUrgencyChanged: %v", err)
+			return
+		}
+		state.SetWindowUrgent(body.ID, body.Urgent)
+
+	case "WorkspaceUrgencyChanged":
+		var body struct {
+			ID     uint64 `json:"id"`
+			Urgent bool   `json:"urgent"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			log.Printf("WorkspaceUrgencyChanged: %v", err)
+			return
+		}
+		state.SetWorkspaceUrgent(body.ID, body.Urgent)
 
 	default:
 		// WindowLayoutsChaged, KeyboardLayoutsChanged, ConfigLoaded, ScreenshotCaptured // not tracked for this use case, but might be useful later so ill just comment this out

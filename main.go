@@ -4,9 +4,6 @@ import "log"
 
 func main() {
 	windowInfo := &NiriWindows{}
-	if _, err := windowInfo.GetWindows(); err != nil {
-		log.Fatalf("failed to get windows: %v", err)
-	}
 
 	niri, err := dialNiri()
 	if err != nil {

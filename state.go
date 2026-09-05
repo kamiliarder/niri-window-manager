@@ -145,3 +145,44 @@ func (n *NiriWorkspaces) getWorkspaces() ([]Workspace, error) {
 	}
 	return workspaces, nil
 }
+
+// UpdateWindowLayouts applies a batch of position/size changes — the event
+// niri sends for resizes, drags, and column reordering, without resending
+// the full window object.
+func (s *State) UpdateWindowLayouts(changes []WindowLayoutChange) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range changes {
+		if w, ok := s.windows[c.ID]; ok {
+			w.Layout = c.Layout
+			s.windows[c.ID] = w
+		}
+	}
+}
+
+func (s *State) SetWindowUrgent(id int64, urgent bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if w, ok := s.windows[id]; ok {
+		w.IsUrgent = urgent
+		s.windows[id] = w
+	}
+}
+
+func (s *State) SetWorkspaceUrgent(id uint64, urgent bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if w, ok := s.workspaces[id]; ok {
+		w.IsUrgent = urgent
+		s.workspaces[id] = w
+	}
+}
+
+func (s *State) SetWorkspaceActiveWindow(workspaceID uint64, activeWindowID *uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if w, ok := s.workspaces[workspaceID]; ok {
+		w.ActiveWindowID = activeWindowID
+		s.workspaces[workspaceID] = w
+	}
+}
