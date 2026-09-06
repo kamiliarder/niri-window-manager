@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 )
 
 // routes is the single place to add, remove, or rebind an HTTP-triggered
@@ -132,5 +133,17 @@ func startServer(addr string, niri *niriConn, state *State, hub *Hub) error {
 	})
 
 	log.Printf("listening on %s", addr)
-	return http.ListenAndServe(addr, mux)
+
+	frontendDir := "../frontend/public"
+	if _, err := os.Stat(frontendDir); os.IsNotExist(err) {
+		frontendDir = "../frontend/public"
+	}
+
+	fileServer := http.FileServer(http.Dir(frontendDir))
+	mux.Handle("/", fileServer)
+
+	log.Printf("Serving frontend from %s", frontendDir)
+	log.Printf("Listening on %s", addr)
+
+	return http.ListenAndServe("0.0.0.0:8080", mux)
 }
