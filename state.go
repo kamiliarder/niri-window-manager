@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"os/exec"
 	"sync"
 )
 
@@ -134,17 +132,17 @@ func (s *State) ActivateWorkspace(id uint64, focused bool) {
 
 }
 
-func (n *NiriWorkspaces) getWorkspaces() ([]Workspace, error) {
-	output, err := exec.Command("niri", "msg", "--json", "workspaces").Output()
-	if err != nil {
-		return nil, err
-	}
-	var workspaces []Workspace
-	if err := json.Unmarshal(output, &workspaces); err != nil {
-		return nil, err
-	}
-	return workspaces, nil
-}
+// func (n *NiriWorkspaces) getWorkspaces() ([]Workspace, error) {
+// 	output, err := exec.Command("niri", "msg", "--json", "workspaces").Output()
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	var workspaces []Workspace
+// 	if err := json.Unmarshal(output, &workspaces); err != nil {
+// 		return nil, err
+// 	}
+// 	return workspaces, nil
+// }
 
 // UpdateWindowLayouts applies a batch of position/size changes — the event
 // niri sends for resizes, drags, and column reordering, without resending

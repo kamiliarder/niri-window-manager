@@ -10,39 +10,68 @@ import (
 	"time"
 )
 
-// capture one event line as {"Variant Name": <payload>}, so we can dispatch on the variant name before decoding the payload shape
+// eventEnvelope captures one raw event line as {"VariantName": <payload>}
+// so we can dispatch on the variant name before decoding the payload shape.
 type eventEnvelope map[string]json.RawMessage
 
-// connects to the socket, request the event stream and keep state in sync as the events arrive, blocks until connection drops, so the caller should run it in a goroutine and reconnect on error
-func runEventStream(state *State) error {
+// WindowLayoutChange decodes one (id, layout) tuple from WindowLayoutsChanged.
+// Niri serializes Rust tuples as 2-element JSON arrays, e.g. [42, {...}],
+// so this can't be a plain struct with json tags — it needs custom decoding.
+type WindowLayoutChange struct {
+	ID     int64
+	Layout Layout
+}
+
+func (c *WindowLayoutChange) UnmarshalJSON(data []byte) error {
+	var pair [2]json.RawMessage
+	if err := json.Unmarshal(data, &pair); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(pair[0], &c.ID); err != nil {
+		return err
+	}
+	return json.Unmarshal(pair[1], &c.Layout)
+}
+
+// runEventStream connects to $NIRI_SOCKET, requests the event stream, and
+// keeps state in sync as events arrive, broadcasting an updated snapshot
+// to every connected websocket client after each event line. It blocks
+// until the connection drops, so the caller should run it in a goroutine
+// and reconnect on error.
+func runEventStream(state *State, hub *Hub) error {
 	sockPath := os.Getenv("NIRI_SOCKET")
 	if sockPath == "" {
-		return fmt.Errorf("NIRI_SOCKET environment variable not set")
+		return fmt.Errorf("NIRI_SOCKET is not set")
 	}
 
 	conn, err := net.Dial("unix", sockPath)
 	if err != nil {
-		return fmt.Errorf("failed to connect to socket: %w", err)
+		return fmt.Errorf("dial niri socket: %w", err)
 	}
 	defer conn.Close()
 
-	// EventStream is a unit-like Request variant, same shape as Windows from the read-only request, no field payload needed
+	// "EventStream" is a unit-like Request variant — same bare-string shape
+	// as "Windows" from the read-only requests. No field payload needed.
 	if _, err := conn.Write([]byte("\"EventStream\"\n")); err != nil {
-		return fmt.Errorf("send EventStream request %w", err)
+		return fmt.Errorf("send EventStream request: %w", err)
 	}
+
 	reader := bufio.NewReader(conn)
 
-	// request acknowledgement, the first line of the response is a single line with the ack, then the rest of the lines are raw events, niri switches connection to push-only once EventStream is requested
+	// The first line is the Reply acknowledging the request itself
+	// (e.g. {"Ok":"Handled"}). Every line after that is a raw Event,
+	// not wrapped in a Reply — niri switches the connection into
+	// push-only mode once EventStream is requested.
 	ack, err := reader.ReadString('\n')
 	if err != nil {
-		return fmt.Errorf("read EventStream ack %w", err)
+		return fmt.Errorf("read event-stream ack: %w", err)
 	}
 	log.Printf("event stream started (ack: %s)", ack)
 
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			return fmt.Errorf("read event line %w", err)
+			return fmt.Errorf("event stream closed: %w", err)
 		}
 
 		var env eventEnvelope
@@ -54,12 +83,21 @@ func runEventStream(state *State) error {
 		for variant, payload := range env {
 			handleEvent(state, variant, payload)
 		}
+
+		// Push the updated state to every connected client. One
+		// broadcast per received line keeps this in lockstep with
+		// niri's own event cadence — no polling interval to tune.
+		hub.Broadcast(state.Snapshot())
 	}
 }
 
-// applies one decoded event to state, unknown variants are logged and skipped
+// handleEvent applies one decoded event to state. Unknown/unhandled
+// variants are logged and skipped rather than treated as fatal — niri
+// has added new event variants before (e.g. CastsChanged), and a client
+// that errors out on an unrecognized one is needlessly fragile.
 func handleEvent(state *State, variant string, payload json.RawMessage) {
 	switch variant {
+
 	case "WindowsChanged":
 		var body struct {
 			Windows []Window `json:"windows"`
@@ -100,6 +138,27 @@ func handleEvent(state *State, variant string, payload json.RawMessage) {
 		}
 		state.SetFocusedWindow(body.ID)
 
+	case "WindowLayoutsChanged":
+		var body struct {
+			Changes []WindowLayoutChange `json:"changes"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			log.Printf("WindowLayoutsChanged: %v", err)
+			return
+		}
+		state.UpdateWindowLayouts(body.Changes)
+
+	case "WindowUrgencyChanged":
+		var body struct {
+			ID     int64 `json:"id"`
+			Urgent bool  `json:"urgent"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			log.Printf("WindowUrgencyChanged: %v", err)
+			return
+		}
+		state.SetWindowUrgent(body.ID, body.Urgent)
+
 	case "WorkspacesChanged":
 		var body struct {
 			Workspaces []Workspace `json:"workspaces"`
@@ -119,15 +178,7 @@ func handleEvent(state *State, variant string, payload json.RawMessage) {
 			log.Printf("WorkspaceActivated: %v", err)
 			return
 		}
-	case "WindowLayoutsChanged":
-		var body struct {
-			Changes []WindowLayoutChange `json:"changes"`
-		}
-		if err := json.Unmarshal(payload, &body); err != nil {
-			log.Printf("WindowLayoutsChanged: %v", err)
-			return
-		}
-		state.UpdateWindowLayouts(body.Changes)
+		state.ActivateWorkspace(body.ID, body.Focused)
 
 	case "WorkspaceActiveWindowChanged":
 		var body struct {
@@ -139,17 +190,6 @@ func handleEvent(state *State, variant string, payload json.RawMessage) {
 			return
 		}
 		state.SetWorkspaceActiveWindow(body.WorkspaceID, body.ActiveWindowID)
-
-	case "WindowUrgencyChanged":
-		var body struct {
-			ID     int64 `json:"id"`
-			Urgent bool  `json:"urgent"`
-		}
-		if err := json.Unmarshal(payload, &body); err != nil {
-			log.Printf("WindowUrgencyChanged: %v", err)
-			return
-		}
-		state.SetWindowUrgent(body.ID, body.Urgent)
 
 	case "WorkspaceUrgencyChanged":
 		var body struct {
@@ -163,13 +203,17 @@ func handleEvent(state *State, variant string, payload json.RawMessage) {
 		state.SetWorkspaceUrgent(body.ID, body.Urgent)
 
 	default:
-		// WindowLayoutsChaged, KeyboardLayoutsChanged, ConfigLoaded, ScreenshotCaptured // not tracked for this use case, but might be useful later so ill just comment this out
+		// WindowFocusTimestampChanged, KeyboardLayoutsChanged,
+		// KeyboardLayoutSwitched, OverviewOpenedOrClosed, ConfigLoaded,
+		// ScreenshotCaptured, Casts* — not tracked for this use case.
 	}
 }
 
-func runEventStreamForever(state *State) {
+// runEventStreamForever keeps the event stream alive, reconnecting with a
+// short backoff if niri restarts or the socket drops.
+func runEventStreamForever(state *State, hub *Hub) {
 	for {
-		if err := runEventStream(state); err != nil {
+		if err := runEventStream(state, hub); err != nil {
 			log.Printf("event stream error, reconnecting in 2s: %v", err)
 		}
 		time.Sleep(2 * time.Second)
