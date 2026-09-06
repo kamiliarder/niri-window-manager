@@ -293,13 +293,42 @@ html, body {
   font-size: 11px;
 }
 
-/* Scaler container for fitting bounded workspace boxes */
+/* Scaler container with horizontal scrolling support */
 .viewport-scaler {
   position: relative;
   flex: 1;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.viewport-scaler::-webkit-scrollbar {
+  height: 6px;
+}
+
+.viewport-scaler::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.viewport-scaler::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+.viewport-scaler::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.canvas-sizer {
+  position: relative;
+  height: 100%;
+  min-width: 100%;
+  will-change: width, height;
 }
 
 .workspace-canvas {
@@ -308,6 +337,74 @@ html, body {
   left: 0;
   transform-origin: 0 0;
   will-change: transform;
+}
+
+/* Empty (1 x (n+1)) Column Slot */
+.empty-column-slot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 2px dashed rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  z-index: 5;
+}
+
+.empty-column-slot:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.empty-slot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.empty-slot-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.empty-column-slot:hover .empty-slot-icon {
+  background: var(--accent-blue);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+.empty-slot-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.empty-slot-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-tool.is-active {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: var(--accent-blue);
+  color: #93c5fd;
 }
 
 /* ==========================================================================

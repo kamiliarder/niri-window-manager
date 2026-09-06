@@ -76,14 +76,24 @@
       </div>
     </div>
 
-    <!-- Scaled Workspace Canvas Container -->
+    <!-- Scaled Workspace Canvas Container with native horizontal scrolling -->
     <div id="viewport-scaler" class="viewport-scaler">
-      <div id="workspace-canvas" class="workspace-canvas">
-        <!-- Columns & Window Tiles are rendered and keyed here dynamically -->
-        <!-- Drop Target Ghost Indicator -->
-        <div id="drop-indicator" class="drop-indicator hidden">
-          <div class="drop-indicator-line"></div>
-          <div class="drop-indicator-badge">Move to Column <span id="drop-column-num">1</span></div>
+      <div id="canvas-sizer" class="canvas-sizer">
+        <div id="workspace-canvas" class="workspace-canvas">
+          <!-- Columns & Window Tiles are rendered and keyed here dynamically -->
+          <!-- Empty Column Slot (1 x (n+1) grid) -->
+          <div id="empty-column-slot" class="empty-column-slot" title="New column slot (drop window or click to spawn)">
+            <div class="empty-slot-card">
+              <div class="empty-slot-icon">+</div>
+              <div class="empty-slot-text">Column <span id="empty-slot-num">1</span></div>
+              <div class="empty-slot-sub">Drop tile or click to add</div>
+            </div>
+          </div>
+          <!-- Drop Target Ghost Indicator -->
+          <div id="drop-indicator" class="drop-indicator hidden">
+            <div class="drop-indicator-line"></div>
+            <div class="drop-indicator-badge">Move to Column <span id="drop-column-num">1</span></div>
+          </div>
         </div>
       </div>
     </div>

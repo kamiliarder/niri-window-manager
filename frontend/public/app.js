@@ -3,10 +3,8 @@
  * Driven entirely by WebSocket push feed with zero polling.
  */
 
-const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
-
 (function () {
-  "use strict";
+  'use strict';
 
   // State
   let currentSnapshot = null;
@@ -14,6 +12,11 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
   let focusedWindowId = null;
   let lastKnownPositions = new Map(); // id -> [x, y]
   let currentScale = 1.0;
+  let isOverviewMode = false;
+  let computedWindowLayouts = new Map(); // id -> { x, y, width, height, colIndex, rowIndex }
+  let computedColumnsInfo = []; // array of { colIndex, x, width, windows }
+  let totalLayoutWidth = 1200;
+  let totalLayoutHeight = 1080;
   let isDraggingTile = false;
   let dragWindowId = null;
   let dragTileEl = null;
@@ -29,49 +32,52 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
   const windowElements = new Map();
 
   // Configuration (Default connects to current host /ws on port 3000)
-  const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
+  const defaultWsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
   const defaultApiUrl = `${window.location.protocol}//${window.location.host}`;
 
   let config = {
-    wsUrl: localStorage.getItem("niri_ws_url") || defaultWsUrl,
-    apiUrl: localStorage.getItem("niri_api_url") || defaultApiUrl,
+    wsUrl: localStorage.getItem('niri_ws_url') || defaultWsUrl,
+    apiUrl: localStorage.getItem('niri_api_url') || defaultApiUrl,
   };
 
   // DOM Elements
-  const appBody = document.getElementById("app-body");
-  const stage = document.getElementById("compositor-stage");
-  const viewportScaler = document.getElementById("viewport-scaler");
-  const canvas = document.getElementById("workspace-canvas");
-  const dropIndicator = document.getElementById("drop-indicator");
-  const dropColNum = document.getElementById("drop-column-num");
-  const connectionBadge = document.getElementById("connection-badge");
-  const connectionText = document.getElementById("connection-text");
-  const reconnectBanner = document.getElementById("reconnect-banner");
-  const activeWsLabel = document.getElementById("active-ws-label");
-  const workspacePager = document.getElementById("workspace-pager");
-  const actionOverlay = document.getElementById("tile-action-overlay");
-  const btnOverlayWidth = document.getElementById("btn-overlay-width");
-  const btnOverlayClose = document.getElementById("btn-overlay-close");
+  const appBody = document.getElementById('app-body');
+  const stage = document.getElementById('compositor-stage');
+  const viewportScaler = document.getElementById('viewport-scaler');
+  const canvasSizer = document.getElementById('canvas-sizer');
+  const canvas = document.getElementById('workspace-canvas');
+  const emptyColumnSlot = document.getElementById('empty-column-slot');
+  const emptySlotNum = document.getElementById('empty-slot-num');
+  const dropIndicator = document.getElementById('drop-indicator');
+  const dropColNum = document.getElementById('drop-column-num');
+  const connectionBadge = document.getElementById('connection-badge');
+  const connectionText = document.getElementById('connection-text');
+  const reconnectBanner = document.getElementById('reconnect-banner');
+  const activeWsLabel = document.getElementById('active-ws-label');
+  const workspacePager = document.getElementById('workspace-pager');
+  const actionOverlay = document.getElementById('tile-action-overlay');
+  const btnOverlayWidth = document.getElementById('btn-overlay-width');
+  const btnOverlayClose = document.getElementById('btn-overlay-close');
 
   // Top bar buttons
-  const btnWsUp = document.getElementById("btn-ws-up");
-  const btnWsDown = document.getElementById("btn-ws-down");
-  const btnColLeft = document.getElementById("btn-col-left");
-  const btnColRight = document.getElementById("btn-col-right");
-  const btnOverview = document.getElementById("btn-overview");
-  const btnAddWindow = document.getElementById("btn-add-window");
-  const btnConfig = document.getElementById("btn-config");
+  const btnWsUp = document.getElementById('btn-ws-up');
+  const btnWsDown = document.getElementById('btn-ws-down');
+  const btnColLeft = document.getElementById('btn-col-left');
+  const btnColRight = document.getElementById('btn-col-right');
+  const btnOverview = document.getElementById('btn-overview');
+  const btnAddWindow = document.getElementById('btn-add-window');
+  const btnConfig = document.getElementById('btn-config');
 
   // Settings modal
-  const settingsModal = document.getElementById("settings-modal");
-  const btnModalClose = document.getElementById("btn-modal-close");
-  const inputWsUrl = document.getElementById("input-ws-url");
-  const inputApiUrl = document.getElementById("input-api-url");
-  const btnApplyEndpoint = document.getElementById("btn-apply-endpoint");
-  const btnResetEndpoint = document.getElementById("btn-reset-endpoint");
-  const btnSimReset = document.getElementById("btn-sim-reset");
-  const btnSimAddNvim = document.getElementById("btn-sim-add-nvim");
-  const btnSimAddBrowser = document.getElementById("btn-sim-add-browser");
+  const settingsModal = document.getElementById('settings-modal');
+  const btnModalClose = document.getElementById('btn-modal-close');
+  const inputWsUrl = document.getElementById('input-ws-url');
+  const inputApiUrl = document.getElementById('input-api-url');
+  const btnApplyEndpoint = document.getElementById('btn-apply-endpoint');
+  const btnResetEndpoint = document.getElementById('btn-reset-endpoint');
+  const btnSimReset = document.getElementById('btn-sim-reset');
+  const btnSimAddNvim = document.getElementById('btn-sim-add-nvim');
+  const btnSimAddBrowser = document.getElementById('btn-sim-add-browser');
 
   // =========================================================================
   // API Action Dispatcher (POST only — zero polling)
@@ -80,8 +86,8 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
     const url = `${config.apiUrl}${endpoint}`;
     try {
       const options = {
-        method: "POST",
-        headers: body ? { "Content-Type": "application/json" } : {},
+        method: 'POST',
+        headers: body ? { 'Content-Type': 'application/json' } : {},
       };
       if (body) {
         options.body = JSON.stringify(body);
@@ -102,22 +108,22 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
     if (ws) {
       try {
         ws.close();
-      } catch (e) { }
+      } catch (e) {}
       ws = null;
     }
 
-    setConnectionStatus(false, "Connecting...");
+    setConnectionStatus(false, 'Connecting...');
 
     try {
       ws = new WebSocket(config.wsUrl);
     } catch (err) {
-      console.error("WebSocket instantiation error:", err);
+      console.error('WebSocket instantiation error:', err);
       scheduleReconnect();
       return;
     }
 
     ws.onopen = function () {
-      setConnectionStatus(true, "Live Connected");
+      setConnectionStatus(true, 'Live Connected');
       clearTimeout(reconnectTimer);
     };
 
@@ -126,18 +132,18 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
         const snapshot = JSON.parse(event.data);
         handleSnapshot(snapshot);
       } catch (err) {
-        console.error("Failed to parse snapshot message:", err, event.data);
+        console.error('Failed to parse snapshot message:', err, event.data);
       }
     };
 
     ws.onclose = function () {
-      setConnectionStatus(false, "Reconnecting (2s)...");
+      setConnectionStatus(false, 'Reconnecting (2s)...');
       scheduleReconnect();
     };
 
     ws.onerror = function (err) {
-      console.warn("WebSocket error:", err);
-      setConnectionStatus(false, "Connection Error");
+      console.warn('WebSocket error:', err);
+      setConnectionStatus(false, 'Connection Error');
     };
   }
 
@@ -150,13 +156,13 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
 
   function setConnectionStatus(connected, text) {
     if (connected) {
-      connectionBadge.className = "status-badge connected";
-      connectionText.textContent = text || "Live Connected";
-      reconnectBanner.classList.add("hidden");
+      connectionBadge.className = 'status-badge connected';
+      connectionText.textContent = text || 'Live Connected';
+      reconnectBanner.classList.add('hidden');
     } else {
-      connectionBadge.className = "status-badge disconnected";
-      connectionText.textContent = text || "Reconnecting...";
-      reconnectBanner.classList.remove("hidden");
+      connectionBadge.className = 'status-badge disconnected';
+      connectionText.textContent = text || 'Reconnecting...';
+      reconnectBanner.classList.remove('hidden');
     }
   }
 
@@ -168,13 +174,10 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
     focusedWindowId = snapshot.focused_window_id;
 
     // Identify active workspace
-    const activeWs =
-      snapshot.workspaces.find((w) => w.is_active) || snapshot.workspaces[0];
+    const activeWs = snapshot.workspaces.find((w) => w.is_active) || snapshot.workspaces[0];
     if (activeWs) {
       activeWorkspaceId = activeWs.id;
-      activeWsLabel.textContent = activeWs.name
-        ? `WS ${activeWs.idx + 1}: ${activeWs.name}`
-        : `Workspace ${activeWs.idx + 1}`;
+      activeWsLabel.textContent = activeWs.name ? `WS ${activeWs.idx + 1}: ${activeWs.name}` : `Workspace ${activeWs.idx + 1}`;
     }
 
     // Render workspace pager (dots)
@@ -182,7 +185,7 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
 
     // Filter windows belonging to active workspace (non-floating)
     const activeWindows = snapshot.windows.filter(
-      (w) => w.workspace_id === activeWorkspaceId && !w.is_floating,
+      (w) => w.workspace_id === activeWorkspaceId && !w.is_floating
     );
 
     // Bounding Box Scaling Strategy
@@ -193,9 +196,7 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
 
     // Update Action Overlay position if active
     if (activeOverlayWindowId !== null) {
-      const activeWindow = activeWindows.find(
-        (w) => w.id === activeOverlayWindowId,
-      );
+      const activeWindow = activeWindows.find((w) => w.id === activeOverlayWindowId);
       if (activeWindow) {
         positionOverlay(activeWindow);
       } else {
@@ -204,46 +205,184 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
     }
   }
 
-  // Compute bounding box and scale to fit viewport
+  // Compute horizontal scrolling column layout (1 x (n+1) grid)
+  function computeWorkspaceLayout(activeWindows) {
+    computedWindowLayouts.clear();
+    computedColumnsInfo = [];
+
+    const START_X = 24;
+    const GAP_X = 24;
+    const START_Y = 24;
+    const GAP_Y = 20;
+    const DEFAULT_W = 960;
+    const DEFAULT_H = 1028;
+
+    if (!activeWindows || activeWindows.length === 0) {
+      totalLayoutWidth = 800;
+      totalLayoutHeight = 800;
+      if (emptyColumnSlot) {
+        emptyColumnSlot.style.transform = `translate(${START_X}px, ${START_Y}px)`;
+        emptyColumnSlot.style.width = '320px';
+        emptyColumnSlot.style.height = `${DEFAULT_H}px`;
+        if (emptySlotNum) emptySlotNum.textContent = '1';
+      }
+      return;
+    }
+
+    // Group windows into columns.
+    // Niri's pos_in_scrolling_layout is [col, row], 1-based.
+    // If not provided or null, assign sequential columns (1 window per column).
+    const colMap = new Map(); // colNum -> array of { win, col, row }
+
+    activeWindows.forEach((win, idx) => {
+      let col = idx + 1;
+      let row = 1;
+
+      if (
+        win.layout &&
+        Array.isArray(win.layout.pos_in_scrolling_layout) &&
+        win.layout.pos_in_scrolling_layout.length >= 1 &&
+        win.layout.pos_in_scrolling_layout[0] != null
+      ) {
+        col = Number(win.layout.pos_in_scrolling_layout[0]) || (idx + 1);
+        row = Number(win.layout.pos_in_scrolling_layout[1]) || 1;
+      }
+
+      if (!colMap.has(col)) {
+        colMap.set(col, []);
+      }
+      colMap.get(col).push({ win, col, row });
+    });
+
+    const sortedColNums = Array.from(colMap.keys()).sort((a, b) => a - b);
+
+    let currentX = START_X;
+    let maxOverallY = DEFAULT_H + START_Y;
+
+    sortedColNums.forEach((colNum) => {
+      const items = colMap.get(colNum);
+      items.sort((a, b) => a.row - b.row);
+
+      // Column width: maximum width of tiles in this column
+      let colWidth = DEFAULT_W;
+      for (const item of items) {
+        const w = item.win.layout?.tile_size?.[0] || item.win.layout?.window_size?.[0];
+        if (w && w > 0) {
+          colWidth = Math.max(colWidth, w);
+        }
+      }
+
+      const colInfo = {
+        colIndex: colNum,
+        x: currentX,
+        width: colWidth,
+        windows: items.map((it) => it.win),
+      };
+      computedColumnsInfo.push(colInfo);
+
+      let currentY = START_Y;
+      items.forEach((item) => {
+        const win = item.win;
+        const w = win.layout?.tile_size?.[0] || colWidth;
+        const h = win.layout?.tile_size?.[1] || DEFAULT_H;
+
+        computedWindowLayouts.set(win.id, {
+          x: currentX,
+          y: currentY,
+          width: w,
+          height: h,
+          colIndex: colNum,
+          rowIndex: item.row,
+        });
+
+        lastKnownPositions.set(win.id, [currentX, currentY]);
+        currentY += h + GAP_Y;
+      });
+
+      if (currentY > maxOverallY) {
+        maxOverallY = currentY;
+      }
+
+      currentX += colWidth + GAP_X;
+    });
+
+    // Position the (n+1) empty column slot
+    const nextColNum = sortedColNums.length > 0 ? sortedColNums[sortedColNums.length - 1] + 1 : 1;
+    const emptySlotWidth = 320;
+    const emptySlotX = currentX;
+
+    if (emptyColumnSlot) {
+      emptyColumnSlot.style.transform = `translate(${emptySlotX}px, ${START_Y}px)`;
+      emptyColumnSlot.style.width = `${emptySlotWidth}px`;
+      emptyColumnSlot.style.height = `${DEFAULT_H}px`;
+      if (emptySlotNum) emptySlotNum.textContent = nextColNum;
+    }
+
+    totalLayoutWidth = emptySlotX + emptySlotWidth + 48;
+    totalLayoutHeight = maxOverallY + 48;
+  }
+
+  // Smoothly center a window/column in the horizontal viewport
+  function centerWindowInViewport(winId, smooth = true) {
+    if (isOverviewMode || !viewportScaler) return;
+    const layout = computedWindowLayouts.get(winId);
+    if (!layout) return;
+
+    const colCenterCanvasX = layout.x + layout.width / 2;
+    const colCenterScreenX = colCenterCanvasX * currentScale;
+    const targetScrollLeft = colCenterScreenX - (viewportScaler.clientWidth / 2);
+
+    viewportScaler.scrollTo({
+      left: Math.max(0, targetScrollLeft),
+      behavior: smooth ? 'smooth' : 'auto',
+    });
+  }
+
+  // Compute bounding box and scale to fit viewport (or overview)
   function recalculateScaling(windows) {
     if (!viewportScaler) return;
     const stageWidth = viewportScaler.clientWidth;
     const stageHeight = viewportScaler.clientHeight;
 
-    if (windows.length === 0) {
-      currentScale = 1.0;
-      canvas.style.transform = `scale(1.0)`;
-      return;
+    computeWorkspaceLayout(windows);
+
+    if (isOverviewMode) {
+      // In Overview mode: fit the entire 1x(n+1) grid on screen
+      const scaleX = (stageWidth - 32) / Math.max(totalLayoutWidth, 600);
+      const scaleY = (stageHeight - 32) / Math.max(totalLayoutHeight, 400);
+      currentScale = Math.min(scaleX, scaleY, 1.0);
+
+      const scaledW = totalLayoutWidth * currentScale;
+      const scaledH = totalLayoutHeight * currentScale;
+      const offsetX = Math.max(16, (stageWidth - scaledW) / 2);
+      const offsetY = Math.max(16, (stageHeight - scaledH) / 2);
+
+      if (canvasSizer) {
+        canvasSizer.style.width = `${stageWidth}px`;
+        canvasSizer.style.height = `${stageHeight}px`;
+      }
+      canvas.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${currentScale})`;
+      viewportScaler.scrollLeft = 0;
+    } else {
+      // In Normal Scrolling mode: scale vertically so windows fill height comfortably
+      const scaleY = (stageHeight - 40) / Math.max(totalLayoutHeight, 500);
+      currentScale = Math.min(Math.max(scaleY, 0.4), 1.0);
+
+      const scaledW = totalLayoutWidth * currentScale;
+      const scaledH = totalLayoutHeight * currentScale;
+
+      if (canvasSizer) {
+        canvasSizer.style.width = `${scaledW}px`;
+        canvasSizer.style.height = `${Math.max(stageHeight, scaledH)}px`;
+      }
+
+      const offsetY = Math.max(8, (stageHeight - scaledH) / 2);
+      canvas.style.transform = `translate(0px, ${offsetY}px) scale(${currentScale})`;
+
+      if (focusedWindowId) {
+        setTimeout(() => centerWindowInViewport(focusedWindowId, false), 20);
+      }
     }
-
-    let maxX = 0;
-    let maxY = 0;
-
-    for (const w of windows) {
-      const pos = w.layout.tile_pos_in_workspace_view ||
-        lastKnownPositions.get(w.id) || [16, 16];
-      const size = w.layout.tile_size || [960, 1028];
-      const right = pos[0] + size[0];
-      const bottom = pos[1] + size[1];
-      if (right > maxX) maxX = right;
-      if (bottom > maxY) maxY = bottom;
-    }
-
-    // Margins
-    const totalW = maxX + 48;
-    const totalH = maxY + 48;
-
-    const scaleX = stageWidth / Math.max(totalW, 600);
-    const scaleY = (stageHeight - 20) / Math.max(totalH, 400);
-
-    // Preserve aspect ratio uniformly
-    currentScale = Math.min(scaleX, scaleY, 1.0);
-
-    // Center vertically if there's extra room
-    const scaledHeight = totalH * currentScale;
-    const offsetY = Math.max(12, (stageHeight - scaledHeight) / 2);
-
-    canvas.style.transform = `translate(16px, ${offsetY}px) scale(${currentScale})`;
   }
 
   // Keyed DOM reconciliation
@@ -272,10 +411,10 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
   }
 
   function createWindowElement(win) {
-    const el = document.createElement("div");
+    const el = document.createElement('div');
     el.id = `window-tile-${win.id}`;
-    el.className = "niri-window-tile";
-    el.setAttribute("data-id", win.id);
+    el.className = 'niri-window-tile';
+    el.setAttribute('data-id', win.id);
 
     const iconGlyph = getAppIconGlyph(win.app_id);
     const fauxContentHtml = generateFauxBodyHtml(win);
@@ -288,7 +427,7 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
         </div>
         <div class="tile-header-right">
           <span class="tile-app-id-pill">${escapeHtml(win.app_id)}</span>
-          <span class="tile-pid">${win.pid || ""}</span>
+          <span class="tile-pid">${win.pid || ''}</span>
         </div>
       </div>
       <div class="tile-body">${fauxContentHtml}</div>
@@ -306,38 +445,40 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
       return;
     }
 
-    // Resolving position:
-    // Respect contract: tile_pos_in_workspace_view can be null mid-transition;
-    // keep last known position, never snap to 0,0!
-    let pos = win.layout.tile_pos_in_workspace_view;
-    if (!pos && lastKnownPositions.has(win.id)) {
-      pos = lastKnownPositions.get(win.id);
-    } else if (!pos) {
-      pos = [16, 16];
+    // Resolving position from computed scrolling column layout
+    let layout = computedWindowLayouts.get(win.id);
+    if (!layout) {
+      const fallbackPos = lastKnownPositions.get(win.id) || [24, 24];
+      const fallbackSize = win.layout?.tile_size || [960, 1028];
+      layout = {
+        x: fallbackPos[0],
+        y: fallbackPos[1],
+        width: fallbackSize[0],
+        height: fallbackSize[1],
+      };
     }
-    lastKnownPositions.set(win.id, pos);
 
-    const size = win.layout.tile_size || [960, 1028];
+    lastKnownPositions.set(win.id, [layout.x, layout.y]);
 
-    el.style.width = `${size[0]}px`;
-    el.style.height = `${size[1]}px`;
-    el.style.transform = `translate(${pos[0]}px, ${pos[1]}px)`;
+    el.style.width = `${layout.width}px`;
+    el.style.height = `${layout.height}px`;
+    el.style.transform = `translate(${layout.x}px, ${layout.y}px)`;
 
     // State classes
     if (win.is_focused) {
-      el.classList.add("is-focused");
+      el.classList.add('is-focused');
     } else {
-      el.classList.remove("is-focused");
+      el.classList.remove('is-focused');
     }
 
     if (win.is_urgent) {
-      el.classList.add("is-urgent");
+      el.classList.add('is-urgent');
     } else {
-      el.classList.remove("is-urgent");
+      el.classList.remove('is-urgent');
     }
 
     // Update title if changed
-    const titleEl = el.querySelector(".tile-title");
+    const titleEl = el.querySelector('.tile-title');
     if (titleEl && titleEl.textContent !== win.title) {
       titleEl.textContent = win.title;
       titleEl.title = win.title;
@@ -345,26 +486,19 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
   }
 
   function getAppIconGlyph(appId) {
-    const id = (appId || "").toLowerCase();
-    if (id.includes("alacritty") || id.includes("kitty") || id.includes("term"))
-      return "$_";
-    if (
-      id.includes("firefox") ||
-      id.includes("chrome") ||
-      id.includes("browser")
-    )
-      return "🌐";
-    if (id.includes("nvim") || id.includes("vim") || id.includes("code"))
-      return "⚡";
-    if (id.includes("slack") || id.includes("discord")) return "#";
-    if (id.includes("spotify") || id.includes("music")) return "♫";
-    if (id.includes("obsidian") || id.includes("note")) return "📝";
-    return "🗔";
+    const id = (appId || '').toLowerCase();
+    if (id.includes('alacritty') || id.includes('kitty') || id.includes('term')) return '$_';
+    if (id.includes('firefox') || id.includes('chrome') || id.includes('browser')) return '🌐';
+    if (id.includes('nvim') || id.includes('vim') || id.includes('code')) return '⚡';
+    if (id.includes('slack') || id.includes('discord')) return '#';
+    if (id.includes('spotify') || id.includes('music')) return '♫';
+    if (id.includes('obsidian') || id.includes('note')) return '📝';
+    return '🗔';
   }
 
   function generateFauxBodyHtml(win) {
-    const id = (win.app_id || "").toLowerCase();
-    if (id.includes("nvim") || id.includes("code")) {
+    const id = (win.app_id || '').toLowerCase();
+    if (id.includes('nvim') || id.includes('code')) {
       return `
         <div class="tile-body-editor">
           <div><span class="kw">func</span> <span class="fn">ReconcileLayout</span>(state *State) {</div>
@@ -375,7 +509,7 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
         </div>
       `;
     }
-    if (id.includes("firefox") || id.includes("browser")) {
+    if (id.includes('firefox') || id.includes('browser')) {
       return `
         <div class="tile-body-browser">
           <div class="browser-bar">https://github.com/YaLTeR/niri/wiki/Layout</div>
@@ -384,18 +518,14 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
         </div>
       `;
     }
-    return (
-      `
+    return `
       <div class="tile-body-terminal">
         <div><span class="prompt">~&gt;</span> <span class="cmd">niri msg</span> windows --json</div>
         <div class="out">[{"id":${win.id},"app_id":"${escapeHtml(win.app_id)}","workspace":${win.workspace_id}}]</div>
         <div><span class="prompt">~&gt;</span> <span class="cmd">cargo</span> check</div>
-        <div class="out">Finished ` +
-      (win.is_focused ? `[focused column]` : `[ready]`) +
-      `</div>
+        <div class="out">Finished ` + (win.is_focused ? `[focused column]` : `[ready]`) + `</div>
       </div>
-    `
-    );
+    `;
   }
 
   // =========================================================================
@@ -406,9 +536,9 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
     let pointerDownPos = { x: 0, y: 0 };
     let hasMoved = false;
 
-    el.addEventListener("pointerdown", (e) => {
+    el.addEventListener('pointerdown', (e) => {
       // Allow overlay buttons without initiating drag
-      if (e.target.closest(".tile-action-overlay")) return;
+      if (e.target.closest('.tile-action-overlay')) return;
 
       e.stopPropagation();
       el.setPointerCapture(e.pointerId);
@@ -425,7 +555,7 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
       dragStartTilePos = { x: lastPos[0], y: lastPos[1] };
     });
 
-    el.addEventListener("pointermove", (e) => {
+    el.addEventListener('pointermove', (e) => {
       if (!dragTileEl || dragWindowId !== windowId) return;
 
       const dx = e.clientX - pointerDownPos.x;
@@ -435,17 +565,15 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
       if (!hasMoved && dist > 7) {
         hasMoved = true;
         isDraggingTile = true;
-        dragTileEl.classList.add("is-dragging");
+        dragTileEl.classList.add('is-dragging');
         hideOverlay();
       }
 
       if (isDraggingTile) {
         // Real-time drag follow with pointer scaling compensation
         const scale = currentScale || 1.0;
-        const currentX =
-          dragStartTilePos.x + (e.clientX - dragStartPointer.x) / scale;
-        const currentY =
-          dragStartTilePos.y + (e.clientY - dragStartPointer.y) / scale;
+        const currentX = dragStartTilePos.x + (e.clientX - dragStartPointer.x) / scale;
+        const currentY = dragStartTilePos.y + (e.clientY - dragStartPointer.y) / scale;
 
         dragTileEl.style.transform = `translate(${currentX}px, ${currentY}px)`;
 
@@ -459,30 +587,22 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
 
       try {
         el.releasePointerCapture(e.pointerId);
-      } catch (err) { }
+      } catch (err) {}
 
       const duration = Date.now() - pointerDownTime;
-      const dist = Math.hypot(
-        e.clientX - pointerDownPos.x,
-        e.clientY - pointerDownPos.y,
-      );
+      const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
 
       if (isDraggingTile) {
         // FINISHED DRAGGING: SNAP TO COLUMN
         isDraggingTile = false;
-        dragTileEl.classList.remove("is-dragging");
+        dragTileEl.classList.remove('is-dragging');
         hideDropGhostIndicator();
 
         const targetIndex = dropTargetColIndex;
-        console.log(
-          `[Drag] Dropped window ${windowId} into column ${targetIndex}`,
-        );
+        console.log(`[Drag] Dropped window ${windowId} into column ${targetIndex}`);
 
         // Contract: POST /window/move-to-column {"id": <window_id>, "index": <target_index>}
-        postAction("/window/move-to-column", {
-          id: windowId,
-          index: targetIndex,
-        });
+        postAction('/window/move-to-column', { id: windowId, index: targetIndex });
 
         // Temporarily animate back to estimated position until snapshot arrives
         dragTileEl = null;
@@ -490,9 +610,11 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
       } else if (dist < 8 && duration < 350) {
         // TAP A WINDOW TILE:
         // 1. Call POST /window/focus {"id": <window.id>}
-        // 2. Reveal small contextual action overlay (close × and switch-preset-width)
+        // 2. Smoothly center tile in horizontal scrolling strip
+        // 3. Reveal small contextual action overlay (close × and switch-preset-width)
         console.log(`[Tap] Focused window ${windowId}`);
-        postAction("/window/focus", { id: windowId });
+        postAction('/window/focus', { id: windowId });
+        centerWindowInViewport(windowId, true);
 
         if (currentSnapshot) {
           const win = currentSnapshot.windows.find((w) => w.id === windowId);
@@ -508,69 +630,51 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
       }
     };
 
-    el.addEventListener("pointerup", handlePointerUpOrCancel);
-    el.addEventListener("pointercancel", handlePointerUpOrCancel);
+    el.addEventListener('pointerup', handlePointerUpOrCancel);
+    el.addEventListener('pointercancel', handlePointerUpOrCancel);
   }
 
   // =========================================================================
-  // Column Snapping Math & Drop Ghost Preview
+  // Column Snapping Math & Drop Ghost Preview (1 x (n+1) grid)
   // =========================================================================
   function updateDropGhostIndicator(tileX) {
-    if (!currentSnapshot || !activeWorkspaceId) return;
-
-    const wsWindows = currentSnapshot.windows.filter(
-      (w) => w.workspace_id === activeWorkspaceId && !w.is_floating,
-    );
-
-    // Collect columns
-    const colPositions = new Map(); // colIdx -> minX
-    for (const w of wsWindows) {
-      const colIdx = w.layout.pos_in_scrolling_layout[0] || 1;
-      const pos = w.layout.tile_pos_in_workspace_view ||
-        lastKnownPositions.get(w.id) || [16, 16];
-      if (!colPositions.has(colIdx) || pos[0] < colPositions.get(colIdx)) {
-        colPositions.set(colIdx, pos[0]);
-      }
-    }
-
-    const sortedCols = Array.from(colPositions.entries()).sort(
-      (a, b) => a[0] - b[0],
-    );
-    if (sortedCols.length === 0) {
+    if (!computedColumnsInfo || computedColumnsInfo.length === 0) {
       dropTargetColIndex = 1;
       return;
     }
 
-    // Determine target column by proximity to column start coordinates
-    let bestIndex = sortedCols[0][0];
+    // Find closest existing column
+    let bestIndex = computedColumnsInfo[0].colIndex;
     let minDistance = Infinity;
+    let targetX = computedColumnsInfo[0].x;
 
-    for (let i = 0; i < sortedCols.length; i++) {
-      const [colIdx, xPos] = sortedCols[i];
-      const dist = Math.abs(tileX - xPos);
+    for (let i = 0; i < computedColumnsInfo.length; i++) {
+      const col = computedColumnsInfo[i];
+      const dist = Math.abs(tileX - col.x);
       if (dist < minDistance) {
         minDistance = dist;
-        bestIndex = colIdx;
+        bestIndex = col.colIndex;
+        targetX = col.x;
       }
     }
 
-    // If dragged significantly past the last column, snap to a new append column
-    const lastCol = sortedCols[sortedCols.length - 1];
-    if (tileX > lastCol[1] + 400) {
-      bestIndex = sortedCols.length;
+    // If dragged past the last column, snap to the new (n+1) column slot
+    const lastCol = computedColumnsInfo[computedColumnsInfo.length - 1];
+    if (tileX > lastCol.x + (lastCol.width * 0.55)) {
+      bestIndex = lastCol.colIndex + 1;
+      targetX = lastCol.x + lastCol.width + 24;
     }
 
     dropTargetColIndex = Math.max(1, bestIndex);
 
     // Show indicator
-    dropIndicator.classList.remove("hidden");
-    const targetX = colPositions.get(dropTargetColIndex) || 16;
+    dropIndicator.classList.remove('hidden');
     dropIndicator.style.transform = `translateX(${targetX}px)`;
     dropColNum.textContent = dropTargetColIndex;
   }
 
   function hideDropGhostIndicator() {
-    dropIndicator.classList.add("hidden");
+    dropIndicator.classList.add('hidden');
   }
 
   // =========================================================================
@@ -579,71 +683,91 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
   function showOverlay(win) {
     activeOverlayWindowId = win.id;
     positionOverlay(win);
-    actionOverlay.classList.remove("hidden");
+    actionOverlay.classList.remove('hidden');
   }
 
   function positionOverlay(win) {
-    const pos = win.layout.tile_pos_in_workspace_view ||
-      lastKnownPositions.get(win.id) || [16, 16];
-    const size = win.layout.tile_size || [960, 1028];
+    const layout = computedWindowLayouts.get(win.id) || {
+      x: 24,
+      y: 24,
+      width: win.layout?.tile_size?.[0] || 960,
+      height: win.layout?.tile_size?.[1] || 1028,
+    };
 
     // Position in top right corner of tile inside canvas coordinate space
-    const overlayX = pos[0] + size[0] - 170;
-    const overlayY = pos[1] + 8;
+    const overlayX = layout.x + layout.width - 170;
+    const overlayY = layout.y + 8;
 
     actionOverlay.style.transform = `translate(${overlayX}px, ${overlayY}px)`;
   }
 
   function hideOverlay() {
     activeOverlayWindowId = null;
-    actionOverlay.classList.add("hidden");
+    actionOverlay.classList.add('hidden');
   }
 
   // Overlay Action Handlers
-  btnOverlayClose.addEventListener("click", (e) => {
+  btnOverlayClose.addEventListener('click', (e) => {
     e.stopPropagation();
     if (activeOverlayWindowId !== null) {
       const id = activeOverlayWindowId;
       hideOverlay();
-      postAction("/window/close", { id });
+      postAction('/window/close', { id });
     }
   });
 
-  btnOverlayWidth.addEventListener("click", (e) => {
+  btnOverlayWidth.addEventListener('click', (e) => {
     e.stopPropagation();
     if (activeOverlayWindowId !== null) {
       const id = activeOverlayWindowId;
-      postAction("/window/switch-preset-width", { id });
+      postAction('/window/switch-preset-width', { id });
     }
   });
 
   // Tap empty stage background: Dismiss overlay
-  stage.addEventListener("pointerdown", (e) => {
-    if (
-      !e.target.closest(".niri-window-tile") &&
-      !e.target.closest(".tile-action-overlay")
-    ) {
+  stage.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.niri-window-tile') && !e.target.closest('.tile-action-overlay')) {
       hideOverlay();
     }
   });
 
   // =========================================================================
-  // Workspace Switching (Vertical Swipe Gesture & Vertical Dot Pager)
+  // Viewport Scrolling & Gestures (Wheel, Pan, Workspace Swipe)
   // =========================================================================
-  stage.addEventListener("pointerdown", (e) => {
+  viewportScaler.addEventListener('wheel', (e) => {
+    if (isOverviewMode) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      viewportScaler.scrollLeft += e.deltaY;
+    } else {
+      viewportScaler.scrollLeft += e.deltaX;
+    }
+  }, { passive: true });
+
+  stage.addEventListener('pointerdown', (e) => {
     // Only register background swipes when not clicking tiles or controls
-    if (
-      e.target.closest(".niri-window-tile") ||
-      e.target.closest("header") ||
-      e.target.closest(".workspace-pager")
-    ) {
+    if (e.target.closest('.niri-window-tile') || e.target.closest('header') || e.target.closest('.workspace-pager') || e.target.closest('.empty-column-slot')) {
       swipeStart = null;
       return;
     }
-    swipeStart = { x: e.clientX, y: e.clientY, time: Date.now() };
+    swipeStart = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: viewportScaler.scrollLeft,
+      time: Date.now(),
+    };
   });
 
-  stage.addEventListener("pointerup", (e) => {
+  stage.addEventListener('pointermove', (e) => {
+    if (!swipeStart || isDraggingTile || isOverviewMode) return;
+    const dx = e.clientX - swipeStart.x;
+    const dy = e.clientY - swipeStart.y;
+    // Pan horizontally if gesture is horizontal
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6) {
+      viewportScaler.scrollLeft = swipeStart.scrollLeft - dx;
+    }
+  });
+
+  stage.addEventListener('pointerup', (e) => {
     if (!swipeStart) return;
     const dy = e.clientY - swipeStart.y;
     const dx = e.clientX - swipeStart.x;
@@ -651,49 +775,44 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
 
     swipeStart = null;
 
-    // Must be predominantly vertical swipe
+    // Must be predominantly vertical swipe for workspace switching
     if (Math.abs(dy) > 50 && Math.abs(dy) > Math.abs(dx) * 1.5 && dt < 400) {
       if (dy < 0) {
         // Swiped UP -> Move to workspace below
-        console.log("[Gesture] Swiped up -> /workspace/down");
-        postAction("/workspace/down");
+        console.log('[Gesture] Swiped up -> /workspace/down');
+        postAction('/workspace/down');
       } else {
         // Swiped DOWN -> Move to workspace above
-        console.log("[Gesture] Swiped down -> /workspace/up");
-        postAction("/workspace/up");
+        console.log('[Gesture] Swiped down -> /workspace/up');
+        postAction('/workspace/up');
       }
     }
   });
 
   function renderWorkspacePager(workspaces) {
-    workspacePager.innerHTML = "";
+    workspacePager.innerHTML = '';
     const sorted = [...workspaces].sort((a, b) => a.idx - b.idx);
 
     sorted.forEach((ws) => {
-      const dot = document.createElement("button");
-      dot.className = `pager-dot ${ws.is_active ? "is-active" : ""} ${ws.is_urgent ? "is-urgent" : ""}`;
-      dot.setAttribute(
-        "title",
-        ws.name
-          ? `Workspace ${ws.idx + 1}: ${ws.name}`
-          : `Workspace ${ws.idx + 1}`,
-      );
+      const dot = document.createElement('button');
+      dot.className = `pager-dot ${ws.is_active ? 'is-active' : ''} ${ws.is_urgent ? 'is-urgent' : ''}`;
+      dot.setAttribute('title', ws.name ? `Workspace ${ws.idx + 1}: ${ws.name}` : `Workspace ${ws.idx + 1}`);
 
-      const tooltip = document.createElement("span");
-      tooltip.className = "pager-tooltip";
+      const tooltip = document.createElement('span');
+      tooltip.className = 'pager-tooltip';
       tooltip.textContent = ws.name || `WS ${ws.idx + 1}`;
       dot.appendChild(tooltip);
 
-      dot.addEventListener("click", (e) => {
+      dot.addEventListener('click', (e) => {
         e.stopPropagation();
         // If clicked an inactive workspace, step towards it
         if (!ws.is_active) {
           const currentIdx = sorted.findIndex((w) => w.is_active);
           const targetIdx = sorted.findIndex((w) => w.id === ws.id);
           if (targetIdx > currentIdx) {
-            postAction("/workspace/down");
+            postAction('/workspace/down');
           } else {
-            postAction("/workspace/up");
+            postAction('/workspace/up');
           }
         }
       });
@@ -705,95 +824,110 @@ const defaultWsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}/
   // =========================================================================
   // Top Navigation Button Handlers
   // =========================================================================
-  btnWsUp.addEventListener("click", () => postAction("/workspace/up"));
-  btnWsDown.addEventListener("click", () => postAction("/workspace/down"));
-  btnColLeft.addEventListener("click", () => postAction("/column/left"));
-  btnColRight.addEventListener("click", () => postAction("/column/right"));
-  btnOverview.addEventListener("click", () => postAction("/overview"));
+  btnWsUp.addEventListener('click', () => postAction('/workspace/up'));
+  btnWsDown.addEventListener('click', () => postAction('/workspace/down'));
+  btnColLeft.addEventListener('click', () => postAction('/column/left'));
+  btnColRight.addEventListener('click', () => postAction('/column/right'));
 
-  btnAddWindow.addEventListener("click", () => {
-    postAction("/sim/new-window", {
-      title: "Terminal — fish",
-      app_id: "kitty",
-    });
-  });
-
-  // Settings Modal
-  btnConfig.addEventListener("click", () => {
-    inputWsUrl.value = config.wsUrl;
-    inputApiUrl.value = config.apiUrl;
-    settingsModal.classList.remove("hidden");
-  });
-
-  btnModalClose.addEventListener("click", () => {
-    settingsModal.classList.add("hidden");
-  });
-
-  settingsModal.addEventListener("click", (e) => {
-    if (e.target === settingsModal) {
-      settingsModal.classList.add("hidden");
+  btnOverview.addEventListener('click', () => {
+    isOverviewMode = !isOverviewMode;
+    if (isOverviewMode) {
+      btnOverview.classList.add('is-active');
+    } else {
+      btnOverview.classList.remove('is-active');
+    }
+    postAction('/overview');
+    if (currentSnapshot) {
+      const activeWindows = currentSnapshot.windows.filter(
+        (w) => w.workspace_id === activeWorkspaceId && !w.is_floating
+      );
+      recalculateScaling(activeWindows);
     }
   });
 
-  btnApplyEndpoint.addEventListener("click", () => {
+  if (emptyColumnSlot) {
+    emptyColumnSlot.addEventListener('click', () => {
+      postAction('/sim/new-window', { title: 'Terminal — fish', app_id: 'kitty' });
+    });
+  }
+
+  btnAddWindow.addEventListener('click', () => {
+    postAction('/sim/new-window', { title: 'Terminal — fish', app_id: 'kitty' });
+  });
+
+  // Settings Modal
+  btnConfig.addEventListener('click', () => {
+    inputWsUrl.value = config.wsUrl;
+    inputApiUrl.value = config.apiUrl;
+    settingsModal.classList.remove('hidden');
+  });
+
+  btnModalClose.addEventListener('click', () => {
+    settingsModal.classList.add('hidden');
+  });
+
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) {
+      settingsModal.classList.add('hidden');
+    }
+  });
+
+  btnApplyEndpoint.addEventListener('click', () => {
     const wsVal = inputWsUrl.value.trim() || defaultWsUrl;
     const apiVal = inputApiUrl.value.trim() || defaultApiUrl;
     config.wsUrl = wsVal;
     config.apiUrl = apiVal;
-    localStorage.setItem("niri_ws_url", wsVal);
-    localStorage.setItem("niri_api_url", apiVal);
-    settingsModal.classList.add("hidden");
+    localStorage.setItem('niri_ws_url', wsVal);
+    localStorage.setItem('niri_api_url', apiVal);
+    settingsModal.classList.add('hidden');
     connectWebSocket();
   });
 
-  btnResetEndpoint.addEventListener("click", () => {
+  btnResetEndpoint.addEventListener('click', () => {
     config.wsUrl = defaultWsUrl;
     config.apiUrl = defaultApiUrl;
-    localStorage.removeItem("niri_ws_url");
-    localStorage.removeItem("niri_api_url");
+    localStorage.removeItem('niri_ws_url');
+    localStorage.removeItem('niri_api_url');
     inputWsUrl.value = defaultWsUrl;
     inputApiUrl.value = defaultApiUrl;
-    settingsModal.classList.add("hidden");
+    settingsModal.classList.add('hidden');
     connectWebSocket();
   });
 
   // Simulation Controls
-  btnSimReset.addEventListener("click", () => {
-    postAction("/sim/reset");
-    settingsModal.classList.add("hidden");
+  btnSimReset.addEventListener('click', () => {
+    postAction('/sim/reset');
+    settingsModal.classList.add('hidden');
   });
 
-  btnSimAddNvim.addEventListener("click", () => {
-    postAction("/sim/new-window", { title: "Nvim — main.go", app_id: "kitty" });
-    settingsModal.classList.add("hidden");
+  btnSimAddNvim.addEventListener('click', () => {
+    postAction('/sim/new-window', { title: 'Nvim — main.go', app_id: 'kitty' });
+    settingsModal.classList.add('hidden');
   });
 
-  btnSimAddBrowser.addEventListener("click", () => {
-    postAction("/sim/new-window", {
-      title: "Firefox — Wayland Compositors",
-      app_id: "firefox",
-    });
-    settingsModal.classList.add("hidden");
+  btnSimAddBrowser.addEventListener('click', () => {
+    postAction('/sim/new-window', { title: 'Firefox — Wayland Compositors', app_id: 'firefox' });
+    settingsModal.classList.add('hidden');
   });
 
   // Window Resize: recompute scale
-  window.addEventListener("resize", () => {
+  window.addEventListener('resize', () => {
     if (currentSnapshot) {
       const activeWindows = currentSnapshot.windows.filter(
-        (w) => w.workspace_id === activeWorkspaceId && !w.is_floating,
+        (w) => w.workspace_id === activeWorkspaceId && !w.is_floating
       );
       recalculateScaling(activeWindows);
     }
   });
 
   function escapeHtml(str) {
-    if (!str) return "";
+    if (!str) return '';
     return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   // Initial Startup
