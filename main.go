@@ -3,18 +3,25 @@ package main
 import "log"
 
 func main() {
-	windowInfo := &NiriWindows{}
-	if _, err := windowInfo.GetWindows(); err != nil {
-		log.Fatalf("failed to get windows: %v", err)
-	}
-
 	niri, err := dialNiri()
 	if err != nil {
 		log.Fatalf("failed to connect to niri: %v", err)
 	}
 	defer niri.Close()
 
-	if err := startServer(":6969", niri); err != nil {
+	windowInfo := &NiriWindows{}
+	initialWindows, err := windowInfo.GetWindows()
+	if err != nil {
+		log.Fatalf("failed to get initial windows: %v", err)
+	}
+
+	state := NewState()
+	state.SetWindows(initialWindows)
+
+	hub := NewHub()
+	go runEventStreamForever(state, hub)
+
+	if err := startServer(":8080", niri, state, hub); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

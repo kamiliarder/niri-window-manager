@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os/exec"
 )
 
@@ -32,8 +31,7 @@ type Layout struct {
 // NiriWindows fetches window state via the `niri msg` CLI wrapper.
 type NiriWindows struct{}
 
-// GetWindows runs `niri msg --json windows`, parses the result, prints a
-// summary of each window, and returns the parsed slice.
+// GetWindows runs `niri msg --json windows`, parses the result, prints a summary of each window, and returns the parsed slice.
 func (n *NiriWindows) GetWindows() ([]Window, error) {
 	output, err := exec.Command("niri", "msg", "--json", "windows").Output()
 	if err != nil {
@@ -45,31 +43,52 @@ func (n *NiriWindows) GetWindows() ([]Window, error) {
 		return nil, err
 	}
 
-	for _, w := range windows {
-		printWindow(w)
-	}
+	// NOTE: Uncomment for debugging, will print the CLI dump in the logs
+	// for _, w := range windows {
+	// 	printWindow(w)
+	//  }
 
 	return windows, nil
 }
 
 // write a formatted summary of a single window to stdout.
-func printWindow(w Window) {
-	status := " "
-	floating := ""
-	urgency := ""
+// NOTE: For debugging
+// func printWindow(w Window) {
+// 	status := " "
+// 	floating := ""
+// 	urgency := ""
+//
+// 	if w.IsFocused {
+// 		status = "*"
+// 	}
+// 	if w.IsFloating {
+// 		floating = "Floating\n"
+// 	}
+// 	if w.IsUrgent {
+// 		urgency = "(Urgent)"
+// 	}
+//
+// 	fmt.Printf(
+// 		"ID : %d\n%s %s | [%s] %s\n%sAt Workspace %d\nLayout :\nPosition [Column %d, Row %d]\nWindow Size : %d\nTile Size : %g\n\n",
+// 		w.ID, w.AppID, w.Title, status, urgency, floating, w.WorkspaceID,
+// 		w.Layout.Position[0], w.Layout.Position[1], w.Layout.WindowSize, w.Layout.TileSize)
+// }
 
-	if w.IsFocused {
-		status = "*"
-	}
-	if w.IsFloating {
-		floating = "Floating\n"
-	}
-	if w.IsUrgent {
-		urgency = "(Urgent)"
-	}
+// WindowLayoutChange decodes one (id, layout) tuple from WindowLayoutsChanged.
+// Niri serializes Rust tuples as 2-element JSON arrays, e.g. [42, {...}],
+// so this can't be a plain struct with json tags — it needs custom decoding.
+// type WindowLayoutChange struct {
+// 	ID     int64
+// 	Layout Layout
+// }
 
-	fmt.Printf(
-		"ID : %d\n%s %s | [%s] %s\n%sAt Workspace %d\nLayout :\nPosition [Column %d, Row %d]\nWindow Size : %d\nTile Size : %g\n\n",
-		w.ID, w.AppID, w.Title, status, urgency, floating, w.WorkspaceID,
-		w.Layout.Position[0], w.Layout.Position[1], w.Layout.WindowSize, w.Layout.TileSize)
-}
+// func (c *WindowLayoutChange) UnmarshalJSON(data []byte) error {
+// 	var pair [2]json.RawMessage
+// 	if err := json.Unmarshal(data, &pair); err != nil {
+// 		return err
+// 	}
+// 	if err := json.Unmarshal(pair[0], &c.ID); err != nil {
+// 		return err
+// 	}
+// 	return json.Unmarshal(pair[1], &c.Layout)
+// }
