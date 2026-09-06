@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Niri Window Manager</title>
+  <meta name="description" content="A touch-first web UI that visually mirrors a live niri compositor session in real time with horizontal scrolling columns, workspace switching, and drag-and-drop column snapping.">
+  <meta property="og:title" content="Niri Window Manager">
+  <meta property="og:description" content="A touch-first web UI that visually mirrors a live niri compositor session in real time with horizontal scrolling columns, workspace switching, and drag-and-drop column snapping.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body id="app-body">
+  <!-- Top Bar: Compositor & Session Status -->
+  <header id="top-bar" class="top-bar">
+    <div class="top-bar-left">
+      <div class="brand-title">
+        <span class="compositor-badge">NIRI</span>
+        <span class="brand-sub">Compositor Mirror</span>
+      </div>
+      <div id="connection-badge" class="status-badge disconnected" title="WebSocket Connection Status">
+        <span class="status-dot"></span>
+        <span id="connection-text" class="status-text">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Active Workspace & Navigation Indicators -->
+    <div class="top-bar-center">
+      <div class="workspace-pill-group">
+        <button id="btn-ws-up" class="icon-btn" title="Move Workspace Up (or Swipe Down)" aria-label="Workspace Up">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M18 15l-6-6-6 6"/></svg>
+        </button>
+        <div id="active-ws-label" class="active-ws-label">Workspace 1</div>
+        <button id="btn-ws-down" class="icon-btn" title="Move Workspace Down (or Swipe Up)" aria-label="Workspace Down">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+
+      <div class="nav-divider"></div>
+
+      <div class="column-nav-group">
+        <button id="btn-col-left" class="icon-btn" title="Move Focused Column Left" aria-label="Move Column Left">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <span class="nav-label">Column</span>
+        <button id="btn-col-right" class="icon-btn" title="Move Focused Column Right" aria-label="Move Column Right">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="top-bar-right">
+      <button id="btn-overview" class="btn-tool" title="Toggle Overview Mode">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Overview</span>
+      </button>
+
+      <button id="btn-add-window" class="btn-tool" title="Spawn Test Window">
+        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>+ Window</span>
+      </button>
+
+      <button id="btn-config" class="icon-btn" title="Endpoint Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport Canvas -->
+  <main id="compositor-stage" class="compositor-stage">
+    <!-- Reconnecting Overlay Banner (shown only when disconnected/reconnecting) -->
+    <div id="reconnect-banner" class="reconnect-banner hidden">
+      <div class="reconnect-spinner"></div>
+      <div class="reconnect-info">
+        <strong>Connecting to Compositor...</strong>
+        <span id="reconnect-hint">Establishing WebSocket push feed with automatic backoff</span>
+      </div>
+    </div>
+
+    <!-- Scaled Workspace Canvas Container -->
+    <div id="viewport-scaler" class="viewport-scaler">
+      <div id="workspace-canvas" class="workspace-canvas">
+        <!-- Columns & Window Tiles are rendered and keyed here dynamically -->
+        <!-- Drop Target Ghost Indicator -->
+        <div id="drop-indicator" class="drop-indicator hidden">
+          <div class="drop-indicator-line"></div>
+          <div class="drop-indicator-badge">Move to Column <span id="drop-column-num">1</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right-Edge Vertical Dot Pager (Workspaces) -->
+    <nav id="workspace-pager" class="workspace-pager" aria-label="Workspaces">
+      <!-- Generated dynamically from snapshot workspaces -->
+    </nav>
+
+    <!-- Bottom Gesture & Shortcut Toast Hints -->
+    <div id="gesture-hint" class="gesture-hint">
+      <span>Swipe vertically on background to switch workspaces • Drag tile to reorder columns • Tap tile for actions</span>
+    </div>
+  </main>
+
+  <!-- Contextual Action Overlay Template (floated above focused tile) -->
+  <div id="tile-action-overlay" class="tile-action-overlay hidden">
+    <button id="btn-overlay-width" class="overlay-btn overlay-btn-width" title="Cycle Preset Width (↔)" aria-label="Switch Preset Width">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M3 12h18"/></svg>
+      <span>Width</span>
+    </button>
+    <button id="btn-overlay-close" class="overlay-btn overlay-btn-close" title="Close Window (✕)" aria-label="Close Window">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.4" fill="none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <span>Close</span>
+    </button>
+  </div>
+
+  <!-- Settings / Host Config Modal -->
+  <div id="settings-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Backend Connection Settings</h3>
+        <button id="btn-modal-close" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          By default, this web UI connects to the integrated backend at <code>/ws</code> on port 3000. If you are running against a remote Niri machine on your local network or Tailscale, you can specify its endpoint below.
+        </p>
+
+        <div class="form-group">
+          <label for="input-ws-url">WebSocket URL (Push Stream)</label>
+          <input type="text" id="input-ws-url" class="form-input" placeholder="ws://localhost:8080/ws" />
+        </div>
+
+        <div class="form-group">
+          <label for="input-api-url">Action API Base URL</label>
+          <input type="text" id="input-api-url" class="form-input" placeholder="http://localhost:8080" />
+        </div>
+
+        <div class="modal-actions-row">
+          <button id="btn-reset-endpoint" class="btn-secondary">Reset to Default</button>
+          <button id="btn-apply-endpoint" class="btn-primary">Connect & Save</button>
+        </div>
+
+        <hr class="modal-divider"/>
+
+        <div class="sim-actions-section">
+          <h4>Compositor Simulation Controls</h4>
+          <p class="sim-desc">Conveniently reset or populate the window session:</p>
+          <div class="sim-buttons">
+            <button id="btn-sim-reset" class="btn-secondary">Reset Default Windows</button>
+            <button id="btn-sim-add-nvim" class="btn-secondary">+ Nvim Window</button>
+            <button id="btn-sim-add-browser" class="btn-secondary">+ Browser Window</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

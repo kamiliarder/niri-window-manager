@@ -1,0 +1,8 @@
+{
+  "name": "Niri Window Manager",
+  "description": "A touch-first web UI that visually mirrors a live niri compositor session in real time with horizontal scrolling columns, workspace switching, and drag-and-drop column snapping.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
